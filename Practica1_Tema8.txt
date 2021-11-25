@@ -1,0 +1,251 @@
+#!/bin/bash
+
+
+##Autor: Francisco David Manzanedo Valle.
+
+
+#Constantes
+declare -r EXISTE=-1 
+declare -r NO_EXISTE=0
+declare -r NOMBRE_FICHERO=actividadUsuarios
+
+#Función para mostrar el menú
+mostrarMenu(){
+
+    echo -e "\n     Menú de opciones        "
+    echo "-----------------------------"
+    echo "1.-  Crear un usuario"
+    echo "2.-  Crear un grupo"
+    echo "3.-  Eliminar un usuario"
+    echo "4.-  Eliminar un grupo"
+    echo "5.-  Mostrar grupo primario y secundarios de un usuario existente"
+    echo "6.-  Mostrar nombre de los usuarios pertenecientes a un grupo existente"
+    echo "7.-  Realizar registro de actividad de un usuario existente"
+    echo "8.-  Deteccion y eliminación de grupos vacíos"
+    echo "9.-  Mostrar el grupo con más número de usuarios"
+    echo -e "10.- Salir\n"
+}
+
+#Función que comprueba si un usuario existe en el sistema
+existeUsuario(){
+
+	if [[ $1 != `egrep -w $1 /etc/passwd | cut -d ':' -f 1` ]]
+	then
+		return $NO_EXISTE
+	else
+		return $EXISTE
+	fi
+}
+
+#Función que comprueba si un grupo existe en el sistema
+existeGrupo(){
+
+	if [[ $1 != `egrep -w $1 /etc/group | cut -d ':' -f 1` ]]
+	then
+		return $NO_EXISTE
+	else
+		return $EXISTE
+	fi
+}
+
+
+
+#Mostramos el menú de opciones mientras la opción escogida por el usuario no sea 10
+while [[ $opcionMenu -ne 10 ]]
+do
+	#Mostramos el menú
+	mostrarMenu 
+
+	#Pedimos la opción al usuario
+	read -p "Escoja una opción: " opcionMenu 
+
+	case $opcionMenu in
+
+		#Añadir usuario:
+		1)
+			read -p "¿Nombre de usuario?: " nombreUsuario
+			#Comprobamos si el nombre de usuario está en uso
+			existeUsuario $nombreUsuario
+			$
+
+
+		#Añadir grupo
+		2)
+			read -p "¿Nombre del grupo?: " nombreGrupo
+			#Comprobamos si el nombre del grupo está en uso
+			existeGrupo $nombreGrupo
+			if [[ $? -eq $NO_EXISTE ]]
+			then
+				sudo groupadd $nombreGrupo
+				echo "Nuevo grupo $nombreGrupo creado"
+			else
+				echo "El nombre del grupo ya está en uso"
+			fi;;
+
+
+		#Eliminar usuario
+		3)
+			read -p "¿Nombre del usuario a eliminar?: " nombreUsuario
+			#Comprobamos si el usuario a elimnar existe o no
+			existeUsuario $nombreUsuario
+			if [[ $? -eq $NO_EXISTE ]]
+			then
+				echo "El usuario $nombreUsuario no existe"
+			else
+				sudo deluser $nombreUsuario
+				echo "Usuario $nombreUsuario eliminado"
+			fi;;
+
+
+		#Eliminar grupo
+		4)
+			read -p "¿Nombre del grupo a eliminar?: " nombreGrupo
+			#Comprobamos si el grupo a eliminar existe o no
+			existeGrupo $nombreGrupo
+			if [[ $? -eq $NO_EXISTE ]]
+			then
+				echo "El grupo $nombreGrupo no existe"
+			else
+				sudo delgroup $nombreGrupo
+				echo "Grupo $nombreGrupo eliminado"
+			fi;;
+
+
+		#Muestra por pantalla el nombre del grupo primario y secundarios de un usuario existente
+		5)
+			read -p "¿Nombre de usuario?: " nombreUsuario
+			#Comprobamos si el usuario existe o no
+			existeUsuario $nombreUsuario
+			if [[ $? -eq $NO_EXISTE ]]
+			then
+				echo "El usuario no está registrado en el sistema"
+			else
+				grupoPrimario=`groups $nombreUsuario | cut -d ':' -f1`
+				gruposSecundarios=`groups $nombreUsuario | cut -d ':' -f2`
+				
+				echo "Usuario: $nombreUsuario"
+				echo "Grupo primario: $grupoPrimario"
+				echo "Grupos secundarios: $gruposSecundarios"
+			fi;;
+
+
+		#Muestra por pantalla el nombre de los usuarios pertenecientes a un grupo existente
+		6)
+			read -p "¿Nombre del grupo?: " nombreGrupo
+			#Comprobamos si el grupo existe
+			existeGrupo $nombreGrupo
+			if [[ $? -eq $NO_EXISTE ]]
+			then
+				echo "El grupo $nombreGrupo no existe en el sistema"
+			else
+				echo "Nombre del grupo: $nombreGrupo"
+				participantes=`egrep -w $nombreGrupo /etc/group | cut -d ':' -f4`
+				if [[ -z $participantes ]]
+				then 
+					echo "El grupo $nombreGrupo no contiene usuarios"
+				else
+					echo "Usuarios pertenecientes al grupo $nombreGrupo: $participantes"
+				fi
+			fi;;
+
+
+		#Dado un usuario existente, realice un registro de su actividad en el fichero/var/log/actividadUsuarios
+		7)
+			read -p "¿Nombre de usuario?: " nombreUsuario
+			#Comprobamos si existe el usuario
+			existeUsuario $nombreUsuario
+			if [[ $? -eq $NO_EXISTE ]]
+			then
+				echo "El usuario no está registrado en el sistema"
+			else
+				fecha=`date -d now`
+				numProcesos=`ps -u $nombreUsuario | wc -l`
+				numFicheros=`find /home/$nombreUsuario -maxdepth 1 -type f | wc -l` #incluye ficheros ocultos
+				
+				#Nos situamos en el directorio donde guardamos el fichero
+				cd /var/log/ 
+				#creamos el fichero "actividadUsuarios" y le damos los permisos
+				sudo touch $NOMBRE_FICHERO && sudo chmod 777 $NOMBRE_FICHERO 
+				#redireccionamos la salida con los datos hacia el fichero
+				echo $nombreUsuario $fecha $numProcesos $numFicheros >> $NOMBRE_FICHERO
+				echo -e "\nUsuario:$nombreUsuario;Fecha:$fecha;NºProcesos:$numProcesos;NºFicheros:$numFicheros"
+			fi;;
+
+
+		#Detección y eliminación de grupos vacíos
+		8)			
+			
+			for value in `cat /etc/group | cut -d ':' -f1,2,3,4`
+			do
+				usuariosGrupo=`echo $value | cut -d ':' -f4`
+				idGrupo=`echo $value | cut -d ':' -f3`
+				nombreGrupo=`echo $value | cut -d ':' -f1`
+				
+				#Si el campo de usuarios del grupo está vació, el GID es mayor que 999 y el nombre del grupo no es nobody
+				if [[ -z $usuariosGrupo && $idGrupo -gt 999 && $nombreGrupo != "nobody" ]]
+				then	
+					#Si el id del grupo no se encuentra como id de grupo primario de un usuario en el sistema, lo eliminamos
+					if [[ -z `egrep -w $idGrupo /etc/passwd | cut -d ':' -f4` ]]
+					then
+						#sudo groupdel $nombreGrupo
+						echo "$nombreGrupo : $idGrupo"
+					fi
+				fi
+			done;;
+			
+				
+		#Mostrar el grupo con más usuarios
+		9)	
+			myArray=()
+			for value in `cat /etc/group | cut -d ':' -f1,2,3,4`
+			do
+				usuariosGrupo=`echo $value | cut -d ':' -f4`
+				nombreGrupo=`echo $value | cut -d ':' -f1`
+				numeroUsuarios=`echo $usuariosGrupo | tr -s "," " " | wc -w`
+				
+				#Si el grupo tiene usuarios, guardamos el número de usuarios de cada grupo en un array
+				if [[ -n $usuariosGrupo ]]
+				then
+					miArray+=($numeroUsuarios)
+				fi
+			done
+				
+			#Comprobamos cuál es el valor máximo del array
+			
+			maximo=${miArray[0]} #tomamos como máximo provisional el primer valor del array
+			
+			for (( i=0; i<${#miArray[*]}; i++ ))
+			do
+				if [[ ${miArray[i]} -gt $maximo ]] 
+				then
+					maximo=${miArray[$i]}
+				fi 
+			done
+			
+			#Mostramos el grupo con más usuarios
+			for value in `cat /etc/group | cut -d ':' -f1,2,3,4`
+			do
+				usuariosGrupo=`echo $value | cut -d ':' -f4`
+				nombreGrupo=`echo $value | cut -d ':' -f1`
+				numeroUsuarios=`echo $usuariosGrupo | tr -s "," " " | wc -w`
+				
+				if [[ $numeroUsuarios -eq $maximo ]]
+				then
+					echo "Grupo: $nombreGrupo  Nº Usuarios: $numeroUsuarios"
+				fi
+			done;;
+			
+			
+		#Salir
+		10) 
+			echo -e "\nHasta pronto!\n"
+			exit 0;;
+		
+		
+		#Opciones no permitidas	
+		*)
+			echo "Opción no permitida. Introduce un número (1-10).";;
+
+
+	esac
+done

@@ -1,0 +1,77 @@
+#!/bin/bash
+
+#Autor: Francisco David Manzanedo Valle
+
+#sleep 30m
+
+declare -r NOMBRE_FICHERO=informeDiario.txt
+#Nos situamos en el directorio donde guardamos el fichero
+cd /var/log/ 
+#creamos el fichero y le damos los permisos
+sudo touch $NOMBRE_FICHERO && sudo chmod 777 $NOMBRE_FICHERO 
+
+fecha=`date -d now | cut -d ' ' -f1,2,3,4`
+hora=`date -d now | cut -d ' ' -f5`
+
+
+for usuario in `who | tr -s ' ' '#' | cut -d '#' -f1`
+do
+
+	##Calculamos el número de procesos ejecutados por el usuario en el sistema
+	numProcesos=0
+
+		for value in `ps aux | tr -s ' ' ':' | grep $usuario | cut -d ':' -f1`
+		do
+			((numProcesos++))	
+		done
+
+	##Calculamos el consumo total de CPU por el usuario conectado
+	sumaCPU=0
+
+		for value in `ps aux | tr -s ' ' ':' | grep $usuario | cut -d":" -f3`
+		do
+	 		sumaCPU=$(bc <<< "scale=2; $value+$sumaCPU")
+		done
+
+	##Calculamos el consumo total de RAM por el usuario conectado
+	sumaRAM=0
+		
+		for value in `ps aux | tr -s ' ' ':' | grep $usuario | cut -d":" -f4`
+		do
+			sumaRAM=$(bc <<< "scale=2; $value+$sumaRAM")
+		done
+
+
+	##Calculamos el número de ficheros en el espacio de trabajo del usuario conectado
+	numFicheros=0
+
+		for value in `find /home/$usuario -type f 2>/dev/null`
+		do	
+			if [[ -x $value ]] #Si los ficheros tienen permiso de ejecución
+			then
+				((numFicheros++))
+			fi
+		done
+
+	#Calculamos el tamaño del espacio de trabajo del usuario
+	espacioOcupado=`du -sh /home/$usuario 2>/dev/null`
+		
+		
+	##Comprobamos si se está ejecutando algún proceso en /etc/procesosProhibidos.txt
+	while read linea
+	do
+		for value in `ps -u $usuario | grep $linea | tr -s ' ' ' ' | cut -d' ' -f1`
+		do
+			#kill -9 $value
+			informe="Proceso perteneciente al usuario $nom PID: $pid eliminado"
+		done
+		
+	done</etc/procesosProhibidos.txt
+			
+	
+	#redireccionamos la salida con los datos hacia el fichero
+  	echo -e "FECHA:$fecha\nUSUARIOS CONECTADOS:$usuario $hora\nNºPROCESOS: $numProcesos\nTOTAL CPU%: $sumaCPU\nTOTAL RAM%: $sumaRAM\nNº FICHEROS: $numFicheros\nESPACIO OCUPADO: $espacioOcupado\nProcesos eliminados de /etc/procesosProhibidos.txt: $informe" > /var/log/$NOMBRE_FICHERO
+	  	
+done
+
+
